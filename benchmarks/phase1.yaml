@@ -1,0 +1,73 @@
+# Phase 1 benchmark: conv-based networks, INT8 W/A, per-tensor Po2, INT8 bias, PTQ only.
+# STATUS: DRAFT — model list and datasets must be confirmed before the first baseline sweep.
+# Once confirmed, freeze this file: changing it invalidates comparisons across cycles.
+#
+# Success criterion:
+#   dev:      every model relative loss <= 1% vs FP32 /255 (INT8 bias)
+#   heldout:  >= 90% of models relative loss <= 1%
+# Held-out results must never be read by the designer or failure analyst.
+
+status: draft
+
+criterion:
+  max_relative_loss_pct: 1.0
+  reference: fp32_div255
+  bias_bits: 8
+  dev_pass_rate: 1.0
+  heldout_pass_rate: 0.9
+
+tasks:
+  classification: {dataset: imagenet-1k, split: val, metric: top1}
+  detection: {dataset: coco2017, split: val, metric: mAP50-95}
+  segmentation: {dataset: voc2012-aug, split: val, metric: mIoU}
+
+# Only the gate tier can ACCEPT a model against the 1% criterion.
+eval_tiers:
+  smoke:        # pipeline check only, never a performance claim
+    samples: 100
+    calibration_subsets: 1
+  screening:    # in-cycle method comparison
+    classification:
+      subset_file: benchmarks/subsets/imagenet_val_screen_5k.txt   # frozen; built by po2-perf-evaluator (subset mode)
+      per_class: 5
+      selection: stratified_by_class, fp32_outputs_only
+      checks: {fp32_top1_abs_diff_pp: 0.3, margin_ks_pvalue_min: 0.05}
+    detection: full_val       # COCO val = 5,000 images
+    segmentation: full_val    # VOC val = 1,449 images
+    extra_metrics: [top1_agreement_vs_fp32, logit_kl_vs_fp32, per_image_delta]
+    calibration_subsets: 1
+  gate:         # dev pass claim and held-out gate
+    data: full_val
+    calibration_subsets: 5
+  proxy_check:  # screening must track gate on baseline runs before it is trusted
+    spearman_min: 0.9
+    no_within_model_rank_flip: true
+
+# Structures listed per model are what makes it a useful probe for per-tensor Po2 PTQ.
+dev:
+  - {id: resnet18,              task: classification, source: torchvision, probes: [residual_add, easy_reference]}
+  - {id: resnet50,              task: classification, source: torchvision, probes: [bottleneck, residual_add]}
+  - {id: mobilenet_v2,          task: classification, source: torchvision, probes: [depthwise, relu6, channel_range_spread]}
+  - {id: mobilenet_v3_large,    task: classification, source: torchvision, probes: [depthwise, hardswish, se]}
+  - {id: efficientnet_b0,       task: classification, source: torchvision, probes: [depthwise, silu, se]}
+  - {id: regnet_y_400mf,        task: classification, source: torchvision, probes: [group_conv, se]}
+  - {id: densenet121,           task: classification, source: torchvision, probes: [concat]}
+  - {id: inception_v3,          task: classification, source: torchvision, probes: [concat, multi_branch, avgpool]}
+  - {id: yolov5s,               task: detection,      source: ultralytics, probes: [silu, concat, upsample, det_head]}
+  - {id: deeplabv3_mobilenet_v3_large, task: segmentation, source: torchvision, probes: [depthwise, aspp, upsample]}
+
+heldout:
+  - {id: resnext50_32x4d,       task: classification, source: torchvision, probes: [group_conv]}
+  - {id: wide_resnet50_2,       task: classification, source: torchvision, probes: [residual_add]}
+  - {id: mnasnet1_0,            task: classification, source: torchvision, probes: [depthwise]}
+  - {id: shufflenet_v2_x1_0,    task: classification, source: torchvision, probes: [channel_shuffle, depthwise, concat]}
+  - {id: efficientnet_b3,       task: classification, source: torchvision, probes: [depthwise, silu, se]}
+  - {id: regnet_x_1_6gf,        task: classification, source: torchvision, probes: [group_conv]}
+  - {id: googlenet,             task: classification, source: torchvision, probes: [concat, multi_branch]}
+  - {id: vgg16_bn,              task: classification, source: torchvision, probes: [plain_deep, large_fc]}
+  - {id: squeezenet1_1,         task: classification, source: torchvision, probes: [concat, no_bn]}
+  - {id: yolov8n,               task: detection,      source: ultralytics, probes: [silu, concat, det_head]}
+  - {id: fcn_resnet50,          task: segmentation,   source: torchvision, probes: [dilated_conv, upsample]}
+  - {id: lraspp_mobilenet_v3_large, task: segmentation, source: torchvision, probes: [depthwise, se, hardswish]}
+
+# Deferred to a later phase (need LayerNorm/GELU HW semantics): convnext_tiny, efficientformer.
