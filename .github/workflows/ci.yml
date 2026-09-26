@@ -1,0 +1,109 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [develop, main]
+  push:
+    branches: [develop, main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  branch-policy:
+    # Branch flow: feature/* → develop → main. Releases reach main only from develop.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check PR source branch
+        env:
+          BASE: ${{ github.base_ref }}
+          HEAD: ${{ github.head_ref }}
+        run: |
+          if [ "$BASE" = "main" ] && [ "$HEAD" != "develop" ]; then
+            echo "::error::PRs into main must come from develop (got $HEAD)"; exit 1
+          fi
+          if [ "$BASE" = "develop" ] && [[ "$HEAD" != feature/* ]] && [[ "$HEAD" != dependabot/* ]]; then
+            echo "::error::PRs into develop must come from feature/* or dependabot/* (got $HEAD)"; exit 1
+          fi
+
+  repo-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v5   # runner system Python refuses pip installs (PEP 668)
+        with:
+          python-version: '3.11'
+
+      - name: Rules stay within 200 characters
+        run: |
+          python3 - <<'EOF'
+          import pathlib, re, sys
+          bad = []
+          for p in sorted(pathlib.Path('.claude/rules').glob('*.md')):
+              body = re.sub(r'\A---\n.*?\n---\n', '', p.read_text(), flags=re.S)  # ignore frontmatter (paths:)
+              n = len(body.replace('\n', ''))
+              if n > 200:
+                  bad.append(f'{p}: {n} chars')
+          if bad:
+              print('\n'.join(f'::error::{b}' for b in bad)); sys.exit(1)
+          EOF
+
+      - name: YAML files parse
+        run: |
+          python3 -m pip install --quiet pyyaml
+          for f in benchmarks/*.yaml .github/*.yml .github/workflows/*.yml; do
+            python3 -c "import sys, yaml; yaml.safe_load(open(sys.argv[1]))" "$f" || { echo "::error::$f is not valid YAML"; exit 1; }
+          done
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Workflow scripts parse
+        run: |
+          for f in .claude/workflows/*.js; do
+            { echo 'async function __w(args,agent,log,phase,parallel,pipeline,budget,workflow){'
+              sed 's/^export const meta/const meta/' "$f"
+              echo '}'; } > /tmp/wf.js
+            node --check /tmp/wf.js || { echo "::error::$f failed to parse"; exit 1; }
+          done
+
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      # Activates once the Python package exists (hashFiles can't be used in a job-level if).
+      - name: Detect Python package
+        id: detect
+        run: echo "present=$([ -f pyproject.toml ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-python@v5
+        if: steps.detect.outputs.present == 'true'
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install
+        if: steps.detect.outputs.present == 'true'
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Lint
+        if: steps.detect.outputs.present == 'true'
+        run: ruff check .
+
+      - name: Unit tests
+        if: steps.detect.outputs.present == 'true'
+        # Deterministic CPU run; GPU/zoo evaluations are not run in CI.
+        env:
+          CUBLAS_WORKSPACE_CONFIG: ':4096:8'
+          PYTHONHASHSEED: '0'
+        run: pytest -q
