@@ -35,7 +35,7 @@ Build around these seams when adding code:
 
 Conv-based networks from `benchmarks/phase1.yaml`. INT8 W/A, per-tensor Po2, **INT8 bias**, PTQ only (unlabeled calibration; exponent search, BN fold, CLE, bias correction, AdaRound/BRECQ-style rounding allowed). Goal: every dev model ≤ 1% relative loss vs FP32 /255, and ≥ 90% of held-out models. The method must be model-agnostic. Held-out results (`docs/results/**/heldout/`) must never feed back into design.
 
-Evaluation tiers (`benchmarks/phase1.yaml` `eval_tiers`): **smoke** (100 samples, pipeline check only), **screening** (frozen 5k stratified ImageNet subset matched on FP32 accuracy and margin; full COCO/VOC val; adds FP32-agreement and logit KL) for in-cycle comparison, **gate** (full val, 5 calibration subsets), the only tier that can ACCEPT. Screening is trusted only after the baseline proxy check (Spearman ≥ 0.9 vs gate).
+Evaluation tiers (`benchmarks/phase1.yaml` `eval_tiers`): **smoke** (100 samples, pipeline check only), **screening** (frozen 5k stratified ImageNet subset matched on FP32 accuracy and margin; full COCO val2017, segmentation on the VOC-20 category subset; adds FP32-agreement and logit KL) for in-cycle comparison, **gate** (full val, 5 calibration subsets), the only tier that can ACCEPT. Screening is trusted only after the baseline proxy check (Spearman ≥ 0.9 vs gate).
 
 ## Subagent workflow
 
