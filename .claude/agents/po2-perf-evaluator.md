@@ -25,7 +25,7 @@ Tier definitions live in `benchmarks/phase1.yaml` under `eval_tiers`.
 | Tier | Data | Calibration subsets | What a verdict means |
 |---|---|---|---|
 | **smoke** | 100 fixed samples | 1 | Pipeline runs end to end. Never used for any performance claim |
-| **screening** | ImageNet: frozen 5,000-sample stratified subset. COCO/VOC: full val | 1 | Candidate for the gate. Used for method comparison within cycles |
+| **screening** | ImageNet: frozen 5,000-sample stratified subset. COCO val2017 (detection; segmentation on the VOC-20 subset): full val | 1 | Candidate for the gate. Used for method comparison within cycles |
 | **gate** | full validation set | 5 | The only tier that can ACCEPT a model against the 1% criterion |
 
 - Screening reports, in addition to the task metric: **top-1 agreement with FP32** (classification), **mean logit KL(FP32 ‖ INT8)**, and for detection/segmentation the per-image metric delta. These have much lower variance than the accuracy delta and are what screening comparisons rely on.

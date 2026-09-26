@@ -25,11 +25,17 @@ Build around these seams when adding code:
 4. **Exponent search**: discrete search over `k` candidates (configurable, default `base_k±4`). It goes up the ladder MinMax → tensor MSE → clipping-aware → layer reconstruction → joint (kx, kw) with the bias constraint. All candidate metrics are recorded, not only the winner.
 5. **Evaluation**: task-level metrics with three baselines (FP32 `/255`, FP32 `/256`, INT8 Po2 `/256`), so that preprocessing loss, PTQ loss and bias loss are reported separately.
 
+## Environments
+
+- This Mac (M1 Max, no CUDA): code, unit tests, smoke tier on CPU.
+- Separate CUDA GPU server: calibration, screening and gate runs (deterministic CUDA kernels). Not set up yet.
+- Datasets (ImageNet, COCO 2017) live under `$PO2_DATA_ROOT`, never in the repo. Layout is in `benchmarks/phase1.yaml`.
+
 ## Current phase (Phase 1)
 
 Conv-based networks from `benchmarks/phase1.yaml`. INT8 W/A, per-tensor Po2, **INT8 bias**, PTQ only (unlabeled calibration; exponent search, BN fold, CLE, bias correction, AdaRound/BRECQ-style rounding allowed). Goal: every dev model ≤ 1% relative loss vs FP32 /255, and ≥ 90% of held-out models. The method must be model-agnostic. Held-out results (`docs/results/**/heldout/`) must never feed back into design.
 
-Evaluation tiers (`benchmarks/phase1.yaml` `eval_tiers`): **smoke** (100 samples, pipeline check only), **screening** (frozen 5k stratified ImageNet subset matched on FP32 accuracy and margin; full COCO/VOC val; adds FP32-agreement and logit KL) for in-cycle comparison, **gate** (full val, 5 calibration subsets), the only tier that can ACCEPT. Screening is trusted only after the baseline proxy check (Spearman ≥ 0.9 vs gate).
+Evaluation tiers (`benchmarks/phase1.yaml` `eval_tiers`): **smoke** (100 samples, pipeline check only), **screening** (frozen 5k stratified ImageNet subset matched on FP32 accuracy and margin; full COCO val2017, segmentation on the VOC-20 category subset; adds FP32-agreement and logit KL) for in-cycle comparison, **gate** (full val, 5 calibration subsets), the only tier that can ACCEPT. Screening is trusted only after the baseline proxy check (Spearman ≥ 0.9 vs gate).
 
 ## Subagent workflow
 
