@@ -57,7 +57,7 @@ jobs:
       - name: YAML files parse
         run: |
           python3 -m pip install --quiet pyyaml
-          for f in benchmarks/*.yaml .github/*.yml .github/workflows/*.yml; do
+          for f in benchmarks/*.yaml configs/*.yaml .github/*.yml .github/workflows/*.yml; do
             python3 -c "import sys, yaml; yaml.safe_load(open(sys.argv[1]))" "$f" || { echo "::error::$f is not valid YAML"; exit 1; }
           done
 

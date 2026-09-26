@@ -49,6 +49,7 @@ Saved workflow `.claude/workflows/po2-research-cycle.js` automates this: subset 
 - `main`: releases only. Receives PRs from `develop`; tag each release (e.g. `v0.1-phase1`) and attach the gate result table to the release notes.
 - `develop`: integration. Receives PRs from `feature/*` only; no direct commits.
 - `feature/<topic>`: one workflow run / topic, branched from `develop`. Design, plan, code, eval scripts and results are all committed here.
+- `main` and `develop` are protected (admins included): PR required, CI checks `branch-policy`, `repo-checks`, `python` must pass, review conversations must be resolved, no force-push. The repo allows merge commits only and deletes head branches after merge.
 - Merge with **merge commits, not squash**: result reports reference commit SHAs, and squashing would orphan them.
 - The workflow creates `feature/<topic>`, commits after each stage (each implementation step only after review passes), and pushes + opens the PR to `develop` only when run with `openPr: true`. Measured eval runs must happen on a clean, committed tree.
 
