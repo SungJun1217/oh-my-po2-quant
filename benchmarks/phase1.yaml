@@ -1,13 +1,14 @@
 # Phase 1 benchmark: conv-based networks, INT8 W/A, per-tensor Po2, INT8 bias, PTQ only.
-# STATUS: DRAFT — model list and datasets must be confirmed before the first baseline sweep.
-# Once confirmed, freeze this file: changing it invalidates comparisons across cycles.
+# STATUS: FROZEN (2026-09-26) — model list, datasets, criterion and tiers.
+# Changing anything below invalidates comparisons across cycles; do it only in a
+# dedicated feature branch followed by a new baseline sweep.
 #
 # Success criterion:
 #   dev:      every model relative loss <= 1% vs FP32 /255 (INT8 bias)
 #   heldout:  >= 90% of models relative loss <= 1%
 # Held-out results must never be read by the designer or failure analyst.
 
-status: draft
+status: frozen
 
 criterion:
   max_relative_loss_pct: 1.0
@@ -16,10 +17,25 @@ criterion:
   dev_pass_rate: 1.0
   heldout_pass_rate: 0.9
 
+# Datasets live outside the repo under $PO2_DATA_ROOT (machine-specific, e.g. on the
+# CUDA experiment server). Record dataset hashes in every run log.
+data_root_env: PO2_DATA_ROOT
+datasets:
+  imagenet-1k:
+    path: imagenet            # $PO2_DATA_ROOT/imagenet/{train,val}/<wnid>/*.JPEG
+    eval_split: val           # 50,000 images
+    calibration_split: train  # calibration samples come from train, never from eval
+  coco2017:
+    path: coco                # $PO2_DATA_ROOT/coco/{train2017,val2017,annotations}
+    eval_split: val2017       # 5,000 images
+    calibration_split: train2017
+
 tasks:
-  classification: {dataset: imagenet-1k, split: val, metric: top1}
-  detection: {dataset: coco2017, split: val, metric: mAP50-95}
-  segmentation: {dataset: voc2012-aug, split: val, metric: mIoU}
+  classification: {dataset: imagenet-1k, metric: top1}
+  detection: {dataset: coco2017, metric: mAP50-95}
+  # torchvision segmentation weights are trained and reported on the COCO subset
+  # with the 20 Pascal VOC categories, so evaluate on that protocol.
+  segmentation: {dataset: coco2017, categories: voc20_subset, metric: mIoU}
 
 # Only the gate tier can ACCEPT a model against the 1% criterion.
 eval_tiers:
@@ -32,8 +48,8 @@ eval_tiers:
       per_class: 5
       selection: stratified_by_class, fp32_outputs_only
       checks: {fp32_top1_abs_diff_pp: 0.3, margin_ks_pvalue_min: 0.05}
-    detection: full_val       # COCO val = 5,000 images
-    segmentation: full_val    # VOC val = 1,449 images
+    detection: full_val       # COCO val2017 = 5,000 images
+    segmentation: full_val    # COCO val2017, VOC-20 subset
     extra_metrics: [top1_agreement_vs_fp32, logit_kl_vs_fp32, per_image_delta]
     calibration_subsets: 1
   gate:         # dev pass claim and held-out gate

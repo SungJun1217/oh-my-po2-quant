@@ -25,6 +25,12 @@ Build around these seams when adding code:
 4. **Exponent search**: discrete search over `k` candidates (configurable, default `base_k±4`). It goes up the ladder MinMax → tensor MSE → clipping-aware → layer reconstruction → joint (kx, kw) with the bias constraint. All candidate metrics are recorded, not only the winner.
 5. **Evaluation**: task-level metrics with three baselines (FP32 `/255`, FP32 `/256`, INT8 Po2 `/256`), so that preprocessing loss, PTQ loss and bias loss are reported separately.
 
+## Environments
+
+- This Mac (M1 Max, no CUDA): code, unit tests, smoke tier on CPU.
+- Separate CUDA GPU server: calibration, screening and gate runs (deterministic CUDA kernels). Not set up yet.
+- Datasets (ImageNet, COCO 2017) live under `$PO2_DATA_ROOT`, never in the repo. Layout is in `benchmarks/phase1.yaml`.
+
 ## Current phase (Phase 1)
 
 Conv-based networks from `benchmarks/phase1.yaml`. INT8 W/A, per-tensor Po2, **INT8 bias**, PTQ only (unlabeled calibration; exponent search, BN fold, CLE, bias correction, AdaRound/BRECQ-style rounding allowed). Goal: every dev model ≤ 1% relative loss vs FP32 /255, and ≥ 90% of held-out models. The method must be model-agnostic. Held-out results (`docs/results/**/heldout/`) must never feed back into design.
