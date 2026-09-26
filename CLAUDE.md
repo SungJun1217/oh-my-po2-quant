@@ -19,7 +19,7 @@ A research codebase for Post-Training Quantization under strict hardware constra
 
 Build around these seams when adding code:
 
-1. **Hardware profile/config**: a single explicit config (bits, signed range `[-127,127]` vs `[-128,127]`, rounding mode, saturation, bias bits + scale rule, accumulator bits, Po2-only requant, `image_divisor: 256`). Every quantizer reads behavior from it. Nothing is hard-coded.
+1. **Hardware profile/config** (`configs/hw_profile.yaml`, provisional DPU-like defaults from `docs/hw/npu-op-survey.md`; `UNVERIFIED-HW` values await the vendor): a single explicit config (bits, signed range `[-127,127]` vs `[-128,127]`, rounding mode, saturation, bias bits + scale rule, accumulator bits, Po2-only requant, `image_divisor: 256`). Every quantizer reads behavior from it. Nothing is hard-coded.
 2. **Preprocessing**: shared by calibration and deployment (default `uint8 * 2^-8`). Any folding of mean/std into the first layer must pass an FP32 equivalence test before quantization.
 3. **Integer datapath simulator**: INT8×INT8 → wide accumulator → quantized bias add (`Sb = 2^(kx+kw)`) → Po2 requant shift → saturation. Use it in place of pure fake-quant.
 4. **Exponent search**: discrete search over `k` candidates (configurable, default `base_k±4`). It goes up the ladder MinMax → tensor MSE → clipping-aware → layer reconstruction → joint (kx, kw) with the bias constraint. All candidate metrics are recorded, not only the winner.

@@ -1,0 +1,129 @@
+# Default hardware profile (Phase 1).
+#
+# The real target NPU's op semantics are not known yet. Values are defensible
+# defaults taken from docs/hw/npu-op-survey.md, mainly Xilinx Vitis AI DPU (the
+# closest Po2 analog). Anything marked UNVERIFIED-HW must be confirmed with the
+# vendor; when the real HW differs, change this file, not the algorithm.
+# Alternatives listed in comments are supported as config options.
+
+profile: default-po2-dpu-like
+status: provisional
+
+quantization:
+  activation:
+    bits: 8
+    signed: true
+    symmetric: true
+    range: [-127, 127]                # UNVERIFIED-HW ([-128, 127] also possible)
+    granularity: per_tensor
+    scale_constraint: power_of_two
+    rounding: half_up                 # DPU activation / requant rounding (toward +inf)
+
+  weight:
+    bits: 8
+    signed: true
+    symmetric: true
+    range: [-127, 127]                # UNVERIFIED-HW
+    granularity: per_tensor
+    scale_constraint: power_of_two
+    rounding: half_to_even            # DPU weight quantizer default (offline)
+
+  bias:
+    bits: 8                           # Phase 1 target; 16 / 32 for comparisons
+    signed: true
+    range: [-127, 127]                # UNVERIFIED-HW
+    rounding: half_to_even            # DPU bias quantizer default
+    scale_rule: product               # Sb = Sx*Sw = 2^(kx+kw)
+    # alt: own_exponent_shift — bias has its own Po2 exponent kb >= kx+kw and is
+    # left-shifted into the accumulator by (kb - (kx+kw)) (DPU-style).
+    left_shift_range: [0, 16]         # used by own_exponent_shift; DPU shift_bias upper bound
+
+  accumulator:
+    bits: 32
+    saturation: saturate              # UNVERIFIED-HW
+
+  requantization:
+    power_of_two_only: true
+    rounding: half_up                 # UNVERIFIED-HW
+    right_shift_range: [0, 16]        # DPU shift_cut = kout - (kx+kw) in [0, 16]
+    saturation: saturate
+
+preprocessing:
+  image_divisor: 256
+
+operators:
+  activation:
+    relu:        {impl: native_clamp}
+    relu6:       {impl: native_clamp, allow_clip_below_6: true}   # k_out search may clip below 6
+    leaky_relu:
+      impl: lut                       # alt: native_mul (alpha as n/256, DPU 26/256)
+      alpha_po2_shortcut: true        # alpha == 2^-n -> native shift, no LUT
+    sigmoid:
+      impl: lut                       # alt: replace_with_hard_sigmoid (model-transform loss, reported separately)
+      output_exponent: -7             # [0, 127/128]; -8 if unsigned LUT output is supported
+    hardsigmoid:
+      impl: lut                       # alt: pwl_native: relu6(x+3)*M >> s
+      pwl_inv6_multiplier: null       # e.g. {m: 2731, shift: 14} (DPU), only if HW has it
+    hardswish:
+      impl: lut                       # alt: pwl_native with internal hsigmoid exponent below
+      pwl_internal_exponent: -7
+    silu:
+      impl: lut                       # alt: replace_with_hardswish (model-transform loss)
+    lut:
+      entries: 256                    # UNVERIFIED-HW
+      index: int8_code_as_uint8       # TFLite/Vela convention: lut[uint8(q)]
+      in_bits: 8
+      out_bits: 8
+      out_signed: true                # UNVERIFIED-HW; unsigned doubles sigmoid resolution
+      generated_offline_per_layer: true   # table absorbs (k_in -> k_out); k_out searched
+      rounding: half_up               # rounding used when generating table entries
+      interpolation: none
+
+  avgpool:
+    divisor_handling: dwconv_int8_weight  # q_w = round(2^m/N) <= 127, weight exp -m; exact for Po2 N
+    # alt: shift_and_fold — sum >> s, fold 2^s/N into the next linear layer (FP32 equivalence test required)
+    simulate_gain_error: true         # e.g. N=49 -> 84/4096 (+0.49%) modeled exactly
+    output_exponent: search
+    accumulator_bits: 32
+    max_kernel: null                  # UNVERIFIED-HW
+  global_avgpool:
+    lower_to: avgpool
+    max_reduction: null               # UNVERIFIED-HW
+
+  add:
+    alignment: to_finer_exact         # left-shift coarser input to min(k); alt: to_coarser_guard, equal_scales
+    guard_bits: 2                     # to_coarser_guard only (DPU: 2, floor)
+    input_shift_range: [0, 15]        # DPU shift_read magnitude
+    output_shift_range: [-15, 15]     # DPU shift_write
+    intermediate_bits: 32             # UNVERIFIED-HW (needs >= 8 + max_exp_gap + 1)
+    output_exponent: search
+    max_inputs: 2                     # DPU supports up to 4
+
+  mul:                                # SE gate x feature, x*sigmoid(x)
+    product_bits: 16                  # UNVERIFIED-HW
+    requant: shift                    # shift = k_out - (k_a + k_b)
+    gate_exponent: -7
+    output_exponent: search
+
+  concat:
+    policy: shared_scale_propagate    # alt: requant_inputs (per-input shift at concat)
+    shared_exponent_selection: search_union   # Vitis uses the coarsest; we search
+    split_detection_heads: true       # keep box/cls outputs separate
+
+  maxpool:           {scale_policy: equal_in_out}
+  upsample_nearest:  {scale_policy: equal_in_out, factors: [2, 4, 8]}
+  upsample_bilinear: {supported: po2_factors_only, guard_bits: 2, scale_policy: equal_in_out}   # UNVERIFIED-HW
+  data_movement:     # reshape, transpose, channel_shuffle, pixel_shuffle, slice, pad
+    scale_policy: equal_in_out
+    pad_value_semantics: zero_code
+
+  first_layer:
+    input_encoding: uint8_k_minus_8   # exact image/256; alt: int8_shr1_k_minus_7 (p>>1). Avoid p-128 + bias fold (padding mismatch)
+    weight_bits: 8
+    activation_bits: 8
+    allow_int16_activation: false     # UNVERIFIED-HW
+  last_layer:
+    weight_bits: 8
+    activation_bits: 8
+    output: int8                      # alt: int32_acc or int16 if HW can write wide outputs
+    allow_int16_activation: false     # UNVERIFIED-HW
