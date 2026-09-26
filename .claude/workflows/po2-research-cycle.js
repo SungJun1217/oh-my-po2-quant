@@ -250,18 +250,28 @@ const HELDOUT = manifest.heldout
 const HELDOUT_RATE = manifest.heldoutPassRate || 0.9
 log(`dev ${DEV.length} models, held-out ${HELDOUT.length} models, eval concurrency ${CONC}`)
 
-// ImageNet screening subset: build once (FP32 outputs only), reuse if already frozen and valid.
-const sub = await evalCheck('subset', `Build or verify the ImageNet screening subset defined in ${MANIFEST} (eval_tiers.screening.classification) using the dev classification models. Reuse it if it already exists and passes its checks.`)
-if (!sub || !sub.ok) return { status: 'stopped', why: 'screening subset could not be built/validated', detail: sub }
-log(`screening subset ok: ${sub.path || ''}`)
-await gitCommit(`eval(${TOPIC}): screening subset`, 'Setup')
-
 const history = []
 let feedback = null
+
+// ImageNet screening subset: built lazily right before the first evaluation (FP32 outputs only),
+// reused if already frozen and valid. Topics that stop before evaluation never need it.
+let subsetReady = false
+async function ensureSubset() {
+  if (subsetReady) return null
+  const sub = await evalCheck('subset', `Build or verify the ImageNet screening subset defined in ${MANIFEST} (eval_tiers.screening.classification) using the dev classification models. Reuse it if it already exists and passes its checks.`)
+  if (!sub || !sub.ok) return { status: 'stopped', why: 'screening subset could not be built/validated', detail: sub, history }
+  log(`screening subset ok: ${sub.path || ''}`)
+  await gitCommit(`eval(${TOPIC}): screening subset`, 'Setup')
+  subsetReady = true
+  return null
+}
+
 
 // ---- baseline sweep ----
 if (RUN_BASELINE) {
   phase('Baseline')
+  const stopSub = await ensureSubset()
+  if (stopSub) return stopSub
   const base = await evalZoo('baseline', DEV)
   history.push({ stage: 'baseline', scoreboard: scoreboard(base) })
   log(`baseline: ${scoreboard(base)}`)
@@ -326,6 +336,8 @@ for (let cycle = 1; cycle <= MAX_CYCLES; cycle++) {
 
   if (next === 'evaluator') {
     phase('Evaluate')
+    const stopSub = await ensureSubset()
+    if (stopSub) return stopSub
     let tier = 'screening'
     let res = await evalZoo('dev', DEV, 'screening')
     history.push({ cycle, stage: 'dev-screening', scoreboard: scoreboard(res) })
