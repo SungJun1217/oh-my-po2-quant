@@ -544,6 +544,22 @@ Sb = 2^(kx + kw)
 
 This is naturally Power-of-2 compatible.
 
+## Alternative bias scale rule: independent exponent + shift
+
+Some Po2 NPUs (e.g. Xilinx Vitis AI DPU) do not force `Sb = Sx * Sw`.
+The bias has its own exponent `kb >= kx + kw` and is left-shifted into the accumulator:
+
+```text
+qb  = sat(round(b / 2^kb))
+acc = ConvInteger(Xq, Wq) + (qb << (kb - (kx + kw)))
+```
+
+This lets a large bias fit INT8 without forcing coarser W/A exponents, at the cost of bias resolution.
+The shift amount is limited by hardware (e.g. DPU `[0, 16]`).
+
+Support both rules through configuration (`bias.scale_rule: product | own_exponent_shift`) and compare them experimentally.
+Never use `own_exponent_shift` unless the hardware profile enables it.
+
 ---
 
 # 14. Bias Precision Must Be Configurable
