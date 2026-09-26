@@ -75,26 +75,33 @@ jobs:
           done
 
   python:
-    # Activates once the Python package exists.
-    if: hashFiles('pyproject.toml') != ''
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
 
+      # Activates once the Python package exists (hashFiles can't be used in a job-level if).
+      - name: Detect Python package
+        id: detect
+        run: echo "present=$([ -f pyproject.toml ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
       - uses: actions/setup-python@v5
+        if: steps.detect.outputs.present == 'true'
         with:
           python-version: '3.11'
           cache: pip
 
       - name: Install
+        if: steps.detect.outputs.present == 'true'
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
       - name: Lint
+        if: steps.detect.outputs.present == 'true'
         run: ruff check .
 
       - name: Unit tests
+        if: steps.detect.outputs.present == 'true'
         # Deterministic CPU run; GPU/zoo evaluations are not run in CI.
         env:
           CUBLAS_WORKSPACE_CONFIG: ':4096:8'
