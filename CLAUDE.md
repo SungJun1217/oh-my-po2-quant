@@ -51,3 +51,9 @@ Saved workflow `.claude/workflows/po2-research-cycle.js` automates this: subset 
 - `feature/<topic>`: one workflow run / topic, branched from `develop`. Design, plan, code, eval scripts and results are all committed here.
 - Merge with **merge commits, not squash**: result reports reference commit SHAs, and squashing would orphan them.
 - The workflow creates `feature/<topic>`, commits after each stage (each implementation step only after review passes), and pushes + opens the PR to `develop` only when run with `openPr: true`. Measured eval runs must happen on a clean, committed tree.
+
+## GitHub automation
+
+- `.github/workflows/ci.yml`: branch-flow check on PRs, rules ≤ 200 chars, YAML/workflow-script parsing, and ruff + pytest once `pyproject.toml` exists. Zoo/GPU evaluations do not run in CI.
+- `.github/workflows/claude.yml` (`@claude` in comments, members only) and `claude-review.yml` (automatic PR review with inline comments). Both need the `CLAUDE_CODE_OAUTH_TOKEN` repo secret.
+- `.github/dependabot.yml`: weekly updates targeting `develop`. torch/torchvision/numpy/scipy/onnx/ultralytics get patch updates only, because numerics changes require a baseline + gate re-run.
