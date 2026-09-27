@@ -63,15 +63,24 @@ Secondary: compare against the best prior Po2 method with INT8 bias, using the P
 
 Also copy the design doc's falsification condition, if any, before looking at results.
 
-## Phase 1. Determinism: identical results on rerun
+## Phase 1. Determinism: exact where it matters, tolerance elsewhere
 
-Every run must be exactly reproducible. Eval scripts must:
+Bit-exactness is required only where it is a fidelity requirement, not everywhere. The integer result depends only on the uint8 input codes, the quantized weights/bias and LUT tables (computed offline in float64, deterministic), and the **selected exponents**. So the only place run-to-run nondeterminism can change the quantized model is calibration.
+
+| Part | Requirement |
+|---|---|
+| **Integer datapath** | Given the same QuantPlan and input codes, output codes are **bit-identical** on any device and backend. This models the HW, which is deterministic integer logic. A mismatch is a simulator bug: INVALID |
+| **Calibration → QuantPlan** | On the same platform, a rerun must select **identical exponents**. Run the calibration forward passes deterministically (deterministic kernels, or float64 / CPU) with a fixed sample order. Log **near-ties**: for every class, the relative gap between the best and second-best candidate objective. Gaps below 1e-6 are flagged `near_tie` and listed in the report, because they are sensitive layers, not noise to hide |
+| **FP32 reference rows** (A: /255, B: /256) | Tolerance, not bit-identity: a rerun must agree within 0.01 %p on the task metric and ≥ 99.9 % per-sample top-1 agreement (detection/segmentation: metric within 0.01 and per-image metric deltas logged). Deterministic kernels are not required for these rows |
+| **Across platforms** (GPU type, CUDA/cuDNN, e.g. on-prem → SageMaker) | No bit-identity expected for FP32. Never mix FP32 rows or QuantPlans from different platforms in one comparison; rerun baselines on the new platform. Integer rows given the same QuantPlan must still be bit-identical |
+
+Eval scripts must:
 - fix all seeds (Python, NumPy, framework, dataloader workers via `worker_init_fn` / generator)
-- enable deterministic kernels (e.g. `torch.use_deterministic_algorithms(True)`, `cudnn.deterministic=True`, `cudnn.benchmark=False`, `CUBLAS_WORKSPACE_CONFIG=:4096:8`) or run on CPU
+- run calibration forwards with deterministic kernels (e.g. `torch.use_deterministic_algorithms(True)`, `cudnn.deterministic=True`, `cudnn.benchmark=False`, `CUBLAS_WORKSPACE_CONFIG=:4096:8`) or on CPU / in float64
 - load calibration and eval samples from a fixed, logged sample-ID list in fixed order, never from a random shuffle. Calibration IDs must not overlap any eval tier's IDs.
-- log environment: framework/CUDA/driver versions, device, dtype, thread count, git commit, clean working tree, model hash, dataset hash
+- log environment: framework/CUDA/driver versions, device, dtype, thread count, conv backend, git commit, clean working tree, model hash, dataset hash
 
-Before any comparison, run the new method's full pipeline (calibration → exponent selection → evaluation) **twice** with the same config. Selected exponents must be identical and the task metric bit-identical. If not, find the source of nondeterminism and fix it in the eval code. If the source is in quantization code, report it and mark the result INVALID.
+Before any comparison, run the new method's calibration **twice** with the same config: selected exponents must be identical. Re-run the integer evaluation from the saved QuantPlan: output codes must be bit-identical. FP32 rows are checked against the tolerance above. If a check fails, find the source of nondeterminism and fix it in the eval code. If the source is in quantization code, report it and mark the result INVALID.
 
 ## Phase 2. Fairness audit
 
@@ -148,7 +157,7 @@ Give one verdict for this model with INT8 bias. The criteria below are for the g
 - **ACCEPT**: fair and deterministic, mean loss over the 5 calibration subsets ≤ 1%, **and** the upper 95% CI bound of the loss ≤ 1%.
 - **REJECT**: fair and measured, and the mean loss > 1%, or the method is significantly worse than the prior best.
 - **INCONCLUSIVE**: mean loss ≤ 1% but the CI upper bound exceeds 1%, or baselines/subsets are missing. State the exact extra runs or the eval-set size needed.
-- **INVALID**: nondeterminism, unfair comparison, leakage or simulator mismatch. List what to fix.
+- **INVALID**: irreproducible exponents, non-bit-identical integer outputs, FP32 rows outside tolerance, unfair comparison, leakage or simulator mismatch. List what to fix.
 
 Also state separately whether the method beats the best prior Po2 method (significant / not significant / worse).
 

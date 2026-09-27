@@ -37,6 +37,8 @@ Conv-based networks from `benchmarks/phase1.yaml`. INT8 W/A, per-tensor Po2, **I
 
 Evaluation tiers (`benchmarks/phase1.yaml` `eval_tiers`): **smoke** (100 samples, pipeline check only), **screening** (frozen 5k stratified ImageNet subset matched on FP32 accuracy and margin; full COCO val2017, segmentation on the VOC-20 category subset; adds FP32-agreement and logit KL) for in-cycle comparison, **gate** (full val, 5 calibration subsets), the only tier that can ACCEPT. Screening is trusted only after the baseline proxy check (Spearman ≥ 0.9 vs gate).
 
+Determinism policy: the integer datapath is bit-exact given a QuantPlan (HW fidelity); calibration must reproduce identical exponents on the same platform (near-ties logged); FP32 reference rows use a tolerance (0.01 %p, ≥ 99.9 % per-sample agreement). Never mix FP32 rows or QuantPlans across platforms.
+
 ## Subagent workflow
 
 Defined in `.claude/agents/`. Subagents can't call each other, so the main session (or the workflow) runs the pipeline and passes file paths between steps:
