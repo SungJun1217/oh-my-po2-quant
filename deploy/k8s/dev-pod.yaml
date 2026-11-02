@@ -1,0 +1,35 @@
+# Long-running dev pod: 1x RTX 3090 (cc 8.6 -> f32_chunked conv backend, D1).
+# Code lives in /data/work/oh-my-po2-quant, the venv in /data/venv (both on NFS, survive pod restarts).
+apiVersion: v1
+kind: Pod
+metadata:
+  name: po2-dev
+  namespace: po2-quant
+  labels: {app: po2-dev, app.kubernetes.io/part-of: oh-my-po2-quant}
+spec:
+  restartPolicy: Always
+  containers:
+  - name: dev
+    image: python:3.11-bookworm
+    command: ["sleep", "infinity"]
+    workingDir: /data/work
+    env:
+    - {name: PO2_DATA_ROOT, value: /data/datasets}
+    - {name: PO2_RUNS_ROOT, value: /data/runs}
+    - {name: PIP_CACHE_DIR, value: /data/cache/pip}
+    - {name: TORCH_HOME, value: /data/cache/torch}
+    - {name: HF_HOME, value: /data/cache/hf}
+    - {name: NVIDIA_DRIVER_CAPABILITIES, value: "compute,utility"}
+    - {name: CUBLAS_WORKSPACE_CONFIG, value: ":4096:8"}
+    - {name: PYTHONHASHSEED, value: "0"}
+    resources:
+      requests: {cpu: "8", memory: 32Gi, nvidia.com/gpu: 1}
+      limits: {cpu: "12", memory: 48Gi, nvidia.com/gpu: 1}
+    volumeMounts:
+    - {name: data, mountPath: /data}
+    - {name: shm, mountPath: /dev/shm}
+  volumes:
+  - name: data
+    persistentVolumeClaim: {claimName: po2-quant-data}
+  - name: shm
+    emptyDir: {medium: Memory, sizeLimit: 8Gi}

@@ -1,0 +1,29 @@
+# Shared RWX storage for datasets and run artifacts, on the master's existing NFS export
+# (/mnt/sdb2/workspaces is exported rw to every GPU worker; no exports change needed).
+#   /data/datasets  -> $PO2_DATA_ROOT   (imagenet/, coco/)
+#   /data/runs      -> $PO2_RUNS_ROOT
+#   /data/cache     -> pip / torch hub / weights caches
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: po2-quant-data
+  labels: {app.kubernetes.io/part-of: oh-my-po2-quant}
+spec:
+  capacity: {storage: 1Ti}
+  accessModes: [ReadWriteMany]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: po2-quant-static
+  nfs:
+    server: 192.168.3.121
+    path: /mnt/sdb2/workspaces/po2-quant
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: po2-quant-data
+  namespace: po2-quant
+spec:
+  accessModes: [ReadWriteMany]
+  storageClassName: po2-quant-static
+  volumeName: po2-quant-data
+  resources: {requests: {storage: 1Ti}}
